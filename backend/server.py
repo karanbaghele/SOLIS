@@ -1,6 +1,8 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import FileResponse
+from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
@@ -496,12 +498,34 @@ async def ai_analyze(data: dict, user=Depends(get_current_user)):
     return await ai_service.analyze_performance(data.get("metrics", {}), data.get("period", "7d"))
 
 # ─── Health ───
-@api.get("/")
-async def root():
+@api.get("/health")
+async def health():
     return {"message": "SolisBoard API v1.0", "status": "running"}
 
 app.include_router(api)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','), allow_methods=["*"], allow_headers=["*"])
+
+STATIC_DIR = ROOT_DIR / "static"
+
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR), html=False), name="static")
+
+
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str):
+    if full_path.startswith("api"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    candidate = (STATIC_DIR / full_path) if full_path else (STATIC_DIR / "index.html")
+    if candidate.is_file():
+        return FileResponse(str(candidate))
+
+    index = STATIC_DIR / "index.html"
+    if index.is_file():
+        return FileResponse(str(index))
+
+    raise HTTPException(status_code=404, detail="Frontend not built")
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
