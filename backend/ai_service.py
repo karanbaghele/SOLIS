@@ -4,7 +4,11 @@ import base64
 import uuid
 import logging
 from dotenv import load_dotenv
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+try:
+    from emergentintegrations.llm.chat import LlmChat, UserMessage  # type: ignore
+except Exception:  # pragma: no cover
+    LlmChat = None
+    UserMessage = None
 
 load_dotenv()
 
@@ -14,6 +18,8 @@ FAL_KEY = os.environ.get("FAL_KEY")
 
 
 async def generate_text_claude(brief: str, platform: str, tone: str, brand_voice: str = None) -> dict:
+    if not LlmChat:
+        return {"model": "claude-sonnet", "caption": "[Claude] LLM integration not configured", "hashtags": [], "score": 0, "error": True}
     try:
         system_msg = f"""You are an expert social media copywriter. Generate a compelling {platform} post.
 Tone: {tone}. {"Brand voice: " + brand_voice if brand_voice else ""}
@@ -39,6 +45,8 @@ Return ONLY a JSON object with keys: caption, hashtags (list), score (0-100 enga
 
 
 async def generate_text_gpt4o(brief: str, platform: str, tone: str, brand_voice: str = None) -> dict:
+    if not LlmChat:
+        return {"model": "gpt-4o", "caption": "[GPT-4o] LLM integration not configured", "hashtags": [], "score": 0, "error": True}
     try:
         system_msg = f"""You are an expert social media copywriter. Generate a compelling {platform} post.
 Tone: {tone}. {"Brand voice: " + brand_voice if brand_voice else ""}
@@ -64,6 +72,8 @@ Return ONLY a JSON object with keys: caption, hashtags (list), score (0-100 enga
 
 
 async def generate_text_gemini(brief: str, platform: str, tone: str, brand_voice: str = None) -> dict:
+    if not LlmChat:
+        return {"model": "gemini", "caption": "[Gemini] LLM integration not configured", "hashtags": [], "score": 0, "error": True}
     try:
         system_msg = f"""You are an expert social media copywriter. Generate a compelling {platform} post.
 Tone: {tone}. {"Brand voice: " + brand_voice if brand_voice else ""}
@@ -105,6 +115,8 @@ async def generate_text_all_models(brief: str, platform: str, tone: str, brand_v
 
 
 async def generate_caption_variations(caption: str, count: int = 5) -> list:
+    if not LlmChat:
+        return [{"variation_type": "Original", "caption": caption, "hashtags": []}]
     try:
         system_msg = f"""Generate exactly {count} style variations of the given social media caption.
 Return a JSON array of objects, each with keys: variation_type (Short/Long/Question/Story/CTA-heavy/Humour), caption, hashtags (list).
