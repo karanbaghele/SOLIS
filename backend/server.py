@@ -118,8 +118,12 @@ async def get_campaigns(brand_id: Optional[str] = None, user=Depends(get_current
         brand_ids = [b["id"] for b in brands]
         query["brand_id"] = {"$in": brand_ids}
     campaigns = await db.campaigns.find(query, {"_id": 0}).to_list(100)
-    for c in campaigns:
-        c["post_count"] = await db.posts.count_documents({"campaign_id": c["id"]})
+    if campaigns:
+        campaign_ids = [c["id"] for c in campaigns]
+        pipeline = [{"$match": {"campaign_id": {"$in": campaign_ids}}}, {"$group": {"_id": "$campaign_id", "count": {"$sum": 1}}}]
+        counts = {doc["_id"]: doc["count"] async for doc in db.posts.aggregate(pipeline)}
+        for c in campaigns:
+            c["post_count"] = counts.get(c["id"], 0)
     return campaigns
 
 @api.post("/campaigns")
@@ -259,9 +263,14 @@ async def get_schedules(brand_id: Optional[str] = None, user=Depends(get_current
         schedules = await db.schedules.find({"post_id": {"$in": post_ids}}, {"_id": 0}).to_list(500)
     else:
         schedules = await db.schedules.find({}, {"_id": 0}).to_list(500)
-    for s in schedules:
-        post = await db.posts.find_one({"id": s.get("post_id")}, {"_id": 0})
-        s["post"] = post
+    if schedules:
+        sched_post_ids = [s.get("post_id") for s in schedules if s.get("post_id")]
+        posts_map = {}
+        if sched_post_ids:
+            sched_posts = await db.posts.find({"id": {"$in": sched_post_ids}}, {"_id": 0}).to_list(500)
+            posts_map = {p["id"]: p for p in sched_posts}
+        for s in schedules:
+            s["post"] = posts_map.get(s.get("post_id"))
     return schedules
 
 @api.post("/schedules")
@@ -317,12 +326,15 @@ async def platform_metrics(days: int = 30, user=Depends(get_current_user)):
 @api.get("/analytics/post-performance")
 async def post_performance(brand_id: Optional[str] = None, user=Depends(get_current_user)):
     posts = await db.posts.find({"brand_id": brand_id} if brand_id else {}, {"_id": 0}).sort("created_at", -1).to_list(50)
-    for p in posts:
-        metrics = await db.post_metrics.find({"post_id": p["id"]}, {"_id": 0}).to_list(10)
-        if metrics:
-            p["metrics"] = metrics[0]
-        else:
-            p["metrics"] = mock_data.generate_mock_metrics(p["id"], p.get("platforms", ["instagram"])[0] if p.get("platforms") else "instagram")
+    if posts:
+        post_ids = [p["id"] for p in posts]
+        all_metrics = await db.post_metrics.find({"post_id": {"$in": post_ids}}, {"_id": 0}).to_list(500)
+        metrics_map = {}
+        for m in all_metrics:
+            if m["post_id"] not in metrics_map:
+                metrics_map[m["post_id"]] = m
+        for p in posts:
+            p["metrics"] = metrics_map.get(p["id"], mock_data.generate_mock_metrics(p["id"], p.get("platforms", ["instagram"])[0] if p.get("platforms") else "instagram"))
     return posts
 
 # ─── Audience ───
